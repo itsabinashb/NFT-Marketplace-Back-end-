@@ -3,14 +3,19 @@ pragma solidity ^0.8.10;
 import "openzeppelin-contracts/contracts/token/ERC721/ERC721.sol";
 import "openzeppelin-contracts/contracts/utils/Counters.sol";
 import "openzeppelin-contracts/contracts/token/ERC721/IERC721Receiver.sol";
+import "openzeppelin-contracts/contracts/utils/math/SafeMath.sol";
 
 contract Marketplace is ERC721, IERC721Receiver {
     using Counters for Counters.Counter;
+    using SafeMath for uint256;
     Counters.Counter public tokenId;
     Counters.Counter public soldTokenId;
     string public baseUri;
     uint256 listPrice = 0.01 ether;
+    uint256 sellingPrice = 0.01 ether;
     address public owner;
+    uint256 targetBalance = 10 ether;
+    uint256 maxPriceChange = 10;
 
     struct Item {
         uint256 _tokenId;
@@ -23,6 +28,7 @@ contract Marketplace is ERC721, IERC721Receiver {
     mapping(uint256 => Item) public IdToItem;
     mapping(uint256 => bool) public readyToSell;
     mapping(uint256 => bool) public sold;
+    mapping(uint256 => address) public tokenBuyer;
 
     constructor(string memory _baseUri) ERC721("GOOD_TOKEN", "GT") {
         baseUri = _baseUri;
@@ -90,6 +96,8 @@ contract Marketplace is ERC721, IERC721Receiver {
         IdToItem[_tokenId].sold = true;
         readyToSell[_tokenId] = false; // tracking unsold tokens
         soldTokenId.increment();
+        tokenBuyer[_tokenId] = msg.sender;
+        tokenId.decrement();
     }
 
     function getUnsoldItems() public view returns (Item[] memory) {
@@ -122,5 +130,65 @@ contract Marketplace is ERC721, IERC721Receiver {
             }
         }
         return yourItems;
+    }
+
+    function returnPurchasedItems() public view returns (Item[] memory) {
+        uint256 totalTokenNumber = tokenId.current();
+        uint256 arrayIndex = 0;
+        Item[] memory purchasedItems;
+        for (uint256 i = 0; i < totalTokenNumber; i++) {
+            if (tokenBuyer[i] == msg.sender) {
+                Item storage _purchasedItems = IdToItem[i];
+                purchasedItems[arrayIndex] = _purchasedItems;
+                arrayIndex++;
+            }
+        }
+        return purchasedItems;
+    }
+
+    function sellPurchasedItems(uint256 _tokenId) public payable {
+        require(
+            msg.value == sellingPrice,
+            "Please pay 0.01 ether to proceed selling."
+        );
+        require(tokenBuyer[_tokenId] == msg.sender);
+        transferFrom(msg.sender, address(this), _tokenId);
+
+        (bool success, ) = msg.sender.call{
+            value: generatePriceForToken(_tokenId)
+        }("");
+        require(success);
+        tokenId.increment();
+    }
+
+    function generatePriceForToken(uint256 _tokenId) public returns (uint256) {
+        uint256 deviation = address(this).balance - targetBalance;
+        uint256 price;
+        if (deviation > 0) {
+            uint256 maxPriceIncrease = (
+                IdToItem[_tokenId].price.mul(maxPriceChange)
+            ).div(100);
+
+            uint256 priceIncrease = (deviation.mul(IdToItem[_tokenId].price))
+                .div(targetBalance);
+
+            if (priceIncrease > maxPriceIncrease) {
+                priceIncrease = maxPriceIncrease;
+            }
+            price = IdToItem[_tokenId].price += priceIncrease;
+        } else if (deviation < 0) {
+            uint256 maxPriceDecrease = (
+                IdToItem[_tokenId].price.mul(maxPriceChange)
+            ).div(100);
+            uint256 priceDecrease = (
+                (0 - deviation).mul(IdToItem[_tokenId].price)
+            ).div(targetBalance);
+            if (priceDecrease > maxPriceDecrease) {
+                priceDecrease = maxPriceDecrease;
+            }
+            price = IdToItem[_tokenId].price -= priceDecrease;
+        }
+
+        return price;
     }
 }
