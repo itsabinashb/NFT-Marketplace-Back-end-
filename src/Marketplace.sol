@@ -67,7 +67,6 @@ contract Marketplace is ERC721 {
         );
         require(_tokenId > 0, "Invalid tokenId");
         _safeTransfer(msg.sender, address(this), _tokenId, "");
-        //require(_checkOnERC721Received(msg.sender, address(this), _tokenId,"") == true);
         IdToItem[_tokenId] = Item(
             _tokenId,
             payable(msg.sender),
