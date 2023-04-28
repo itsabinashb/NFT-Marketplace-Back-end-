@@ -2,10 +2,9 @@
 pragma solidity ^0.8.10;
 import "openzeppelin-contracts/contracts/token/ERC721/ERC721.sol";
 import "openzeppelin-contracts/contracts/utils/Counters.sol";
-import "openzeppelin-contracts/contracts/token/ERC721/IERC721Receiver.sol";
 import "openzeppelin-contracts/contracts/utils/math/SafeMath.sol";
 
-contract Marketplace is ERC721, IERC721Receiver {
+contract Marketplace is ERC721 {
     using Counters for Counters.Counter;
     using SafeMath for uint256;
     Counters.Counter public tokenId;
@@ -55,17 +54,6 @@ contract Marketplace is ERC721, IERC721Receiver {
         return currentTokenId;
     }
 
-    function onERC721Received(
-        address operator,
-        address from,
-        uint256 _tokenId,
-        bytes calldata data
-    ) external override returns (bytes4) {
-        require(msg.sender == address(this));
-        emit OnERC721ReceivedTriggered(operator, from, _tokenId, data);
-        return this.onERC721Received.selector;
-    }
-
     /**
      * @dev set the token in marketplace contract for sell
      * @param _tokenId tokenId of token which is going to be submitted in contract
@@ -78,7 +66,8 @@ contract Marketplace is ERC721, IERC721Receiver {
             "You are not the owner of this token"
         );
         require(_tokenId > 0, "Invalid tokenId");
-        safeTransferFrom(msg.sender, address(this), _tokenId);
+        _safeTransfer(msg.sender, address(this), _tokenId, "");
+        //require(_checkOnERC721Received(msg.sender, address(this), _tokenId,"") == true);
         IdToItem[_tokenId] = Item(
             _tokenId,
             payable(msg.sender),
@@ -97,7 +86,7 @@ contract Marketplace is ERC721, IERC721Receiver {
     function buyItem(uint256 _tokenId) public payable {
         require(readyToSell[_tokenId], "tokenId is not ready to sell yet");
         require(msg.value == IdToItem[_tokenId].price);
-        safeTransferFrom(address(this), msg.sender, _tokenId);
+        _safeTransfer(address(this), msg.sender, _tokenId, "");
         (bool sent, ) = owner.call{value: listPrice}("");
         require(sent);
         (bool success, ) = IdToItem[_tokenId].seller.call{value: msg.value}("");
@@ -110,9 +99,10 @@ contract Marketplace is ERC721, IERC721Receiver {
         tokenId.decrement();
         emit ItemPurchased(_tokenId, msg.sender);
     }
-     /**
-      * @dev function for getting unsold items of marketplace
-      */
+
+    /**
+     * @dev function for getting unsold items of marketplace
+     */
     function getUnsoldItems() public view returns (Item[] memory) {
         uint256 totalTokenNumber = tokenId.current();
 
@@ -148,6 +138,7 @@ contract Marketplace is ERC721, IERC721Receiver {
         }
         return yourItems;
     }
+
     /**
      * @dev returns all items purchased by buyer
      */
